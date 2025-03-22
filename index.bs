@@ -1,10 +1,10 @@
 <pre class='metadata'>
-Title: The TODO API
+Title: script-src-v2
 Shortname: todo
 Level: None
 Status: w3c/UD
-Repository: explainers-by-googlers/todo-your-repo-name
-URL: https://explainers-by-googlers.github.io/todo-your-repo-name
+Repository: explainers-by-googlers/script-src-v2
+URL: https://explainers-by-googlers.github.io/script-src-v2
 Editor: TODO: Your Name, Google https://google.com, TODO@google.com
 Abstract: TODO: A short description of your spec, one or two sentences.
 Markup Shorthands: markdown yes, css no
