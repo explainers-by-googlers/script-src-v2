@@ -21,11 +21,11 @@ feedback on the proposed solution. It has not been approved to ship in Chrome.
 - [<strong>Non-goals</strong>](#strongnon-goalsstrong)
 - [**Use cases**](#use-cases)
   - [Allowlisting specific URLs for use with script-src](#allowlisting-specific-urls-for-use-with-script-src)
-  - [Allowlisting specific scripts for use with `eval` or `Function`](#allowlisting-specific-scripts-for-use-with-eval-or-function)
+  - [Allowlisting specific scripts for use with `eval` or `eval`-like functions](#allowlisting-specific-scripts-for-use-with-eval-or-eval-like-functions)
 - [**Proposed Solution**](#proposed-solution)
   - [Add new CSP directive](#add-new-csp-directive)
   - [Introduce new url-hashes keyword to cover script-src attributes](#introduce-new-url-hashes-keyword-to-cover-script-src-attributes)
-  - [Extend script hashes to cover eval](#extend-script-hashes-to-cover-eval)
+  - [Extend script hashes to cover eval and eval-like functions](#extend-script-hashes-to-cover-eval-and-eval-like-functions)
   - [Add hashes to CSP reporting](#add-hashes-to-csp-reporting)
   - [**Deployment use case examples**](#deployment-use-case-examples)
   - [Single-page applications](#single-page-applications)
@@ -43,7 +43,7 @@ feedback on the proposed solution. It has not been approved to ship in Chrome.
 
 ## Introduction
 
-We're proposing a new CSP directive to help websites protect themselves against DOM XSS. Developers will be able to allowlist scripts that are allowed to execute through the existing hashes mechanism, that will now extend to cover [script-src](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src) URLs and [eval](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval). This facilitates an easier to deploy, robust CSP policy that mitigates XSS by blocking unallowed inline and eval scripts.
+We're proposing a new CSP directive to help websites protect themselves against DOM XSS. Developers will be able to allowlist scripts that are allowed to execute through the existing hashes mechanism, that will now extend to cover [script-src](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src) URLs and [eval](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval) (and other eval-like functions). This facilitates an easier to deploy, robust CSP policy that mitigates XSS by blocking unallowed inline and eval scripts.
 
 To be secure, a policy needs to permit legitimate scripts to execute, while blocking any scripts that the application doesn't expect. In practice, this means avoiding host-based allowlists and having a strict CSP allowing the execution of scripts by using nonces or hashes.
 
@@ -78,9 +78,9 @@ The core challenge for CSP is to distinguish between legitimate scripts (intende
 Sites that want to allowlist specific scripts for use with script-src currently have 2 options, allowlist the specific scripts contents through [subresource integrity](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity), which is not practical for scripts that change often (e.g. analytics scripts), or use [host-source](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#host-source) to allowlist hostnames, which has the issues [described in further detail below](?tab=t.0#bookmark=id.i59bvq2i29zz). These issues would be addressed if we have a mechanism to allowlist full URLs for script-src.
 
 
-### Allowlisting specific scripts for use with `eval` or `Function`
+### Allowlisting specific scripts for use with `eval` or `eval`-like functions
 
-The only existing mechanism to use eval or Function is by enabling them with [unsafe-eval](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src#unsafe_eval_expressions), which allows all scripts. This means that currently any site that needs to use eval must expose itself to eval-based XSS risks. Allowlisting individual scripts would prevent this risk.
+The only existing mechanism to use eval or eval-like functions (Function, and string literals in setTimeout, setInterval, and setImmediate) is by enabling them with [unsafe-eval](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src#unsafe_eval_expressions), which allows all scripts. This means that currently any site that needs to use eval must expose itself to eval-based XSS risks. Allowlisting individual scripts would prevent this risk.
 
 
 ## **Proposed Solution**
@@ -128,9 +128,9 @@ Content-Security-Policy: script-src 'url-hashes' 'sha256-SHA256("script.js")';
 
 
 
-### Extend script hashes to cover eval
+### Extend script hashes to cover eval and eval-like functions
 
-Similarly, scripts run within eval() currently can only be allowed via unsafe-eval, which allows any script, with no mechanism to allowlist only specific ones. This proposes that script hashes should cover scripts loaded via eval, in addition to inline scripts, e.g. given a CSP of `script-src 'sha256-SHA256(foo)'; `permitting `eval(foo);`
+Similarly, scripts run within eval() currently can only be allowed via unsafe-eval, which allows any script, with no mechanism to allowlist only specific ones. This proposes that script hashes should cover scripts loaded via eval (Function, or string literals in setTimeout, setInterval, and setImmediate), in addition to inline scripts, e.g. given a CSP of `script-src 'sha256-SHA256(foo)'; `permitting `eval(foo);`
 
 
 ### Add hashes to CSP reporting
@@ -145,7 +145,7 @@ This necessitates adding two fields: the hash of the content of a script (for in
 
 ### Single-page applications
 
-To create a hash-based policy for a static, single-page application, the developer can run tooling to parse the HTML of the application and calculate the hashes of all inline &lt;script> blocks, URLs present in &lt;script src> attributes, and code blocks used in eval or New Function() blocks.
+To create a hash-based policy for a static, single-page application, the developer can run tooling to parse the HTML of the application and calculate the hashes of all inline &lt;script> blocks, URLs present in &lt;script src> attributes, and code blocks used in eval, New Function(), or string literals in setTimeout, setInterval, and setImmediate blocks.
 
 The tooling can generate a list of hashes and potentially automatically insert an HTML &lt;meta> tag with their values, e.g. &lt;meta http-equiv="Content-Security-Policy" content="script-src ‘sha256-abc...” url-hashes 'sha256-xyz…'">. The developer can optionally add the 'strict-dynamic' keyword to permit allowlisted scripts to transitively load additional scripts at runtime.
 
