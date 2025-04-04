@@ -113,7 +113,7 @@ Currently, if the CSP header is set, scripts loaded via script-src need to be al
 
 
 ```
-Content-Security-Policy: script-src 'url-hashes' 'sha256-SHA256("https://example.com/script.js")';
+Content-Security-Policy: script-src-v2 'url-hashes' 'sha256-SHA256("https://example.com/script.js")';
 <script src="https://example.com/script.js"></script>
 ```
 
@@ -122,7 +122,7 @@ or
 
 
 ```
-Content-Security-Policy: script-src 'url-hashes' 'sha256-SHA256("script.js")';
+Content-Security-Policy: script-src-v2 'url-hashes' 'sha256-SHA256("script.js")';
 <script src="script.js"></script>
 ```
 
