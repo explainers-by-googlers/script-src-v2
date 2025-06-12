@@ -23,18 +23,19 @@ feedback on the proposed solution. It has not been approved to ship in Chrome.
   - [Allowlisting specific URLs for use with script-src](#allowlisting-specific-urls-for-use-with-script-src)
   - [Allowlisting specific scripts for use with `eval` or `eval`-like functions](#allowlisting-specific-scripts-for-use-with-eval-or-eval-like-functions)
 - [**Proposed Solution**](#proposed-solution)
-  - [Add new CSP directive](#add-new-csp-directive)
   - [Introduce new url-hashes keyword to cover script-src attributes](#introduce-new-url-hashes-keyword-to-cover-script-src-attributes)
   - [Extend script hashes to cover eval and eval-like functions](#extend-script-hashes-to-cover-eval-and-eval-like-functions)
   - [Add hashes to CSP reporting](#add-hashes-to-csp-reporting)
+  - [Backwards compatibility](#backwards-compatibility)
+    - [Extend script-src with new features, implemented in a way that old browsers can still see a more lax policy](#extend-script-src-with-new-features-implemented-in-a-way-that-old-browsers-can-still-see-a-more-lax-policy)
+    - [Implement the new features as a completely new directive](#implement-the-new-features-as-a-completely-new-directive)
   - [**Deployment use case examples**](#deployment-use-case-examples)
   - [Single-page applications](#single-page-applications)
   - [Server-side applications](#server-side-applications)
-- [**Open questions**](#open-questions)
-  - [Should the new script-src-v2 directive override script-src?](#should-the-new-script-src-v2-directive-override-script-src)
 - [**Considered alternatives**](#considered-alternatives)
   - [Allowlist external scripts directly by URL, instead of URL hash](#allowlist-external-scripts-directly-by-url-instead-of-url-hash)
   - [Overload the existing unsafe-hashes keyword](#overload-the-existing-unsafe-hashes-keyword)
+  - [Support only absolute URL hashes](#support-only-absolute-url-hashes)
   - [report-hash keyword](#report-hash-keyword)
 - [**Stakeholder Feedback / Opposition**](#stakeholder-feedback--opposition)
 - [**References & acknowledgements**](#references--acknowledgements)
@@ -43,7 +44,7 @@ feedback on the proposed solution. It has not been approved to ship in Chrome.
 
 ## Introduction
 
-We're proposing a new CSP directive to help websites protect themselves against DOM XSS. Developers will be able to allowlist scripts that are allowed to execute through the existing hashes mechanism, that will now extend to cover [script-src](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src) URLs and [eval](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval) (and other eval-like functions). This facilitates an easier to deploy, robust CSP policy that mitigates XSS by blocking unallowed inline and eval scripts.
+We're proposing new CSP features to help websites protect themselves against DOM XSS. Developers will be able to allowlist scripts that are allowed to execute through the existing hashes mechanism, that will now extend to cover [script-src](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src) URLs and [eval](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval) (and other eval-like functions). This facilitates an easier to deploy, robust CSP policy that mitigates XSS by blocking unallowed inline and eval scripts. This new features will be implemented in a backwards compatible way, so sites can set a policy that provides better security in browsers that support them without causing breakage in browsers that do not.
 
 To be secure, a policy needs to permit legitimate scripts to execute, while blocking any scripts that the application doesn't expect. In practice, this means avoiding host-based allowlists and having a strict CSP allowing the execution of scripts by using nonces or hashes.
 
@@ -86,34 +87,13 @@ The only existing mechanism to use eval or eval-like functions (Function, and st
 ## **Proposed Solution**
 
 
-### Add new CSP directive
-
-Since this proposal adds new ways to allowlist scripts, it would run into backwards compatibility issues in browsers that do not yet support it (e.g. a developer allowlists a URL they’re using in script-src, this will work in browsers that support the new functionality, but will be blocked in older browsers that do not). To address this, we propose adding a new “script-src-v2”\* directive to support the new features. This way sites can add a fallback more permissive script-src (e.g. https: or unsafe-eval) directive that older browsers (which don’t support “script-src-v2” and will ignore it) can fall back to.
-
-\*The naming aims to capture that this is meant to improve coverage of script-src, however this directive does not fully replace script-src, as it doesn’t cover all of what script-src does.
-
-This new directive would support a subset of what script-srcs covers, namely:
-
-
-
-*   [nonce](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#nonce-nonce_value)
-*   [<hash_algorithm>-&lt;hash_value>](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#hash_algorithm-hash_value) (which will now cover eval)
-*   [unsafe-hashes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#unsafe-hashes)
-*   [strict-dynamic](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#strict-dynamic)
-*   [unsafe-inline](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#unsafe-inline)
-*   [unsafe-eval](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#unsafe-eval)
-*   The new url-hashes keyword, which will cover script-src URLs, as described in the next section
-
-A point of discussion is whether script-src-v2 replaces script-src if both are set, or we try to enforce both at the same time (see detailed design section below).
-
-
 ### Introduce new url-hashes keyword to cover script-src attributes
 
-Currently, if the CSP header is set, scripts loaded via script-src need to be allowlisted, which can only be done through [nonces](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#nonce-nonce_value) or SRI. This proposes adding a mechanism to allowlist individual URLs (the initial URL, without following redirects, since following redirects would cause a XSLeak, by exposing whether the URL triggers a redirect) via their hash by adding a new ‘url-hashes’ expression that can be added to script-src.This new url-hashes directive would support both absolute and relative URLs, e.g.:
+Currently, if the CSP header is set, scripts loaded via script-src need to be allowlisted, which can only be done through [nonces](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#nonce-nonce_value), SRI, or hostname sourcelists. This proposes adding a mechanism to allowlist individual URLs (the initial URL, without following redirects, since following redirects would cause a XSLeak, by exposing whether the URL triggers a redirect) via their hash by including their hash (prefixed with url-<hashalgorithm>) in script-src. URL hashes would support both absolute and relative URLs, e.g.:
 
 
 ```
-Content-Security-Policy: script-src-v2 'url-hashes' 'sha256-SHA256("https://example.com/script.js")';
+Content-Security-Policy: script-src 'url-sha256-SHA256("https://example.com/script.js")';
 <script src="https://example.com/script.js"></script>
 ```
 
@@ -122,7 +102,7 @@ or
 
 
 ```
-Content-Security-Policy: script-src-v2 'url-hashes' 'sha256-SHA256("script.js")';
+Content-Security-Policy: script-src 'url-sha256-SHA256("script.js")';
 <script src="script.js"></script>
 ```
 
@@ -130,7 +110,10 @@ Content-Security-Policy: script-src-v2 'url-hashes' 'sha256-SHA256("script.js")'
 
 ### Extend script hashes to cover eval and eval-like functions
 
-Similarly, scripts run within eval() currently can only be allowed via unsafe-eval, which allows any script, with no mechanism to allowlist only specific ones. This proposes that script hashes should cover scripts loaded via eval (Function, or string literals in setTimeout, setInterval, and setImmediate), in addition to inline scripts, e.g. given a CSP of `script-src 'sha256-SHA256(foo)'; `permitting `eval(foo);`
+Similarly, scripts run within eval() currently can only be allowed via unsafe-eval, which allows any script, with no mechanism to allowlist only specific ones. This proposes that script hashes should cover scripts loaded via eval (Function, or string literals in setTimeout, setInterval, and setImmediate), in addition to inline scripts, e.g. given a CSP of `script-src 'eval-sha256-SHA256(foo)';` permitting `eval(foo);`
+
+
+Prefixes in hashes are necessary to distinguish these from existing hashes supported in script-src. This is useful to prevent scripts from also being unintentionally allowlisted as inline scripts, and is also required to implement backwards compatibility (so browsers that understand the new features can detect when they are being used).
 
 
 ### Add hashes to CSP reporting
@@ -139,6 +122,37 @@ In order to facilitate easier adoption, script hashes should also be added to CS
 
 This necessitates adding two fields: the hash of the content of a script (for inline/eval scripts), and the hash of the URL (initial URL, without following redirects) of the script (for script src elements).
 
+
+### Backwards compatibility
+One of the goals is for the new features to be deployable on sites without breaking on older browsers. There are two ways to achieve this:
+
+
+#### Extend script-src with new features, implemented in a way that old browsers can still see a more lax policy
+This would extend the existing script-src directive with 2 new keywords, `eval-<hashalgorithm>-<hash>` and `url-<hashalgorithm>-<hash>`. For eval, backwards compatibility would be achieved by browsers that support the new features ignore `unsafe-eval` if one or more eval hashes are present (which matches the existing behavior for `unsafe-inline`, which is [ignored if script hashes are present](https://www.w3.org/TR/CSP3/#allow-all-inline)). This would allow a site that needs to use eval to set both unsafe-eval and the script hashes. Browsers that don't support the new feature would still work due to the presence of unsafe-eval (and ignore the hashes since they don't understand that keyword), while browsers that support hashes would ignore `unsafe-eval`. In practice this would look like:
+
+
+```
+Content-Security-Policy: script-src 'eval-sha256-SHA256("console.log('Hello World')';
+<script>
+eval("console.log('Hello World')");
+</script>
+```
+
+
+For URL hashes, a similar approach can be followed. Browsers that support the new features can ignore host based allowlisiting if a URL hash is present. Unlike eval though, this leaves some open questions about interactions with other directives, notably `strict-dynamic`. A common fallback for sites that use URL hashes would be to include `https:` in the fallback policy. However sites might require `strict-dynamic` in order to use URL hashes, and they can't set a policy like `script-src https: strict-dynamic, url-sha256-<hash>` since `strict-dynamic` would cause `https:` to be [ignored](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/script-src#strict-dynamic). This can be solved by either:
+
+- Adding a new keyword that enables strict-dynamic like behavior for URL hashes, but is ignored in older browsers, e.g. `strict-dynamic-hashes`.
+  -e.g.: For a site that needs `https: 'unsafe-inline'` in older browsers and `'strict-dynamic-hashes' 'url-sha256(example.com/script.js)'` in browsers that support hashes, it can set `https: 'unsafe-inline' 'strict-dynamic-hashes' 'url-sha256(example.com/script.js)'` as its policy. Older browsers will ignore `strict-dynamic-hashes` and the url hash, while newer browsers will ignore `https:` due to the presence of a hash and `unsafe-inline` due to the presence of `strict-dynamic-hashes`.
+- Having the presence of URL hashes imply strict-dynamic, so the keyword is not necessary. This would be the easiest behavior to explain, but it means that sites using hashes lose the option to disable `strict-dynamic` behavior, so sites that don't need it, but want to use URL hashes have a policy that is more lax than they really need.
+  -If implemented this way, strict-dynamic behavior could also be limited to scripts loaded via a hashed URL.
+- Having the presence of URL hashes imply strict-dynamic, and providing an opt-out keyword, e.g. `no-strict-dynamic-hashes`.
+
+#### Implement the new features as a completely new directive
+The new features can be implemented as part of a separate directive (e.g. `script-src-v2`) that completely replaces `script-src` if it's set. This has the advantage of making the policy easier to read since it's immediately obvious what applies in browsers that are compatible with the new features, and what is the fallback for browsers that are not. On the other hand, the main drawback to this approach is that moves the complexity to the [fallback algorithm](https://www.w3.org/TR/CSP3/#directive-fallback-list).
+
+Both `script-src-elem` and `script-src-attr` fallback directly to `script-src` so they can be handled by either introducing a replacement that supports the new features and replaces the other one if set(e.g. `script-src-elem-v2`), or by completely ignoring them if `script-src-v2` is set.
+
+`worker-src`, `child-src`, and `default-src` interact with `script-src`, but also with other directives, so adding a "v2" version of them leads to an overly complicated algorithm. Alternatively we can add support for url hashes directly on these directives, but that means the only way to have a backup policy for browsers that don't support them, is to not rely on the fallback algorithm and use `script-src` directly. Finally, we can also choose to not support the new features in these, but this leads to a scenario where sites that want to use URL hashes for workers have to *not* set `worker-src` and are forced to rely on the fallback to `script-src`
 
 ### **Deployment use case examples**
 
@@ -168,14 +182,6 @@ This process could also be delegated to a third-party service - the developer wo
 After the application enforces a hash-based CSP, if a developer adds a new script or modifies an existing one, they will immediately notice that the script is blocked from executing and needs a new hash to be added to the policy to be enabled.
 
 This carries a significant promise of allowing the deployment of CSP in legacy applications which don't undergo frequent changes, but which might otherwise process sensitive data.
-
-
-## **Open questions**
-
-
-### Should the new script-src-v2 directive override script-src?
-
-As described in the previous section, this would launch with a new directive so it can be used only on browsers that support the new hashes functionality, while keeping the less strict directives in place to prevent breakage in older browsers that don’t yet support it. This means we have to decide whether the new directive completely replaces script-src in browsers that support it, or whether the browser attempts to enforce both (and prefers the stricter one). The main advantage of completely replacing it is that there is no ambiguity in which directives will be enforced, however it means there is an opportunity for script-src-v2 to be mistakenly configured as less strict than script-src.
 
 
 ## **Considered alternatives**
